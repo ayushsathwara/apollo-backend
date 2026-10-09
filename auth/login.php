@@ -111,9 +111,50 @@ elseif ($role === "faculty") {
 
 elseif ($role === "parent") {
 
-    echo "Parent login will be added later.";
+    $sql = "SELECT * FROM parents WHERE email = ?";
+
+    $stmt = $conn->prepare($sql);
+
+    $stmt->bind_param("s", $email);
+
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+
+    if ($result->num_rows === 1) {
+
+        $parent = $result->fetch_assoc();
+
+        if (password_verify($password, $parent["password"])) {
+
+            // Clear any previous role's session
+            session_regenerate_id(true);
+
+            unset($_SESSION["student_id"]);
+            unset($_SESSION["faculty_id"]);
+
+            // Store the authenticated parent account
+            $_SESSION["parent_id"] = $parent["id"];
+
+            echo "Login successful!";
+
+        } else {
+
+            echo "Invalid email or password.";
+
+        }
+
+    } else {
+
+        echo "Invalid email or password.";
+
+    }
+
+    $stmt->close();
 
 }
+
+
 
 
 else {
