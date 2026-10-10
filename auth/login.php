@@ -4,20 +4,41 @@ session_start();
 
 include "../db.php";
 
-$email = $_POST["email"] ?? "";
+$email = trim($_POST["email"] ?? "");
 $password = $_POST["password"] ?? "";
 $role = $_POST["role"] ?? "";
+
+/* ================================
+   BASIC VALIDATION
+================================ */
 
 if ($email === "" || $password === "") {
     echo "Email and password are required.";
     exit;
 }
 
-if ($role === "") {
-    echo "Please select a role.";
+if (!in_array($role, ["student", "faculty", "parent"], true)) {
+    echo "Invalid role.";
     exit;
 }
 
+/* ================================
+   OTP VERIFICATION CHECK
+================================ */
+
+$emailVerified =
+    isset($_SESSION["otp_verified_email"]) &&
+    isset($_SESSION["otp_verified_role"]) &&
+    isset($_SESSION["otp_verified_at"]) &&
+    strtolower($_SESSION["otp_verified_email"]) === strtolower($email) &&
+    $_SESSION["otp_verified_role"] === $role &&
+    (time() - (int)$_SESSION["otp_verified_at"]) <= 300 &&
+    (time() - (int)$_SESSION["otp_verified_at"]) >= 0;
+
+if (!$emailVerified) {
+    echo "Please verify your email with OTP first.";
+    exit;
+}
 
 /* ================================
    STUDENT LOGIN
@@ -26,11 +47,8 @@ if ($role === "") {
 if ($role === "student") {
 
     $sql = "SELECT * FROM students WHERE email = ?";
-
     $stmt = $conn->prepare($sql);
-
     $stmt->bind_param("s", $email);
-
     $stmt->execute();
 
     $result = $stmt->get_result();
@@ -41,26 +59,29 @@ if ($role === "student") {
 
         if (password_verify($password, $student["password"])) {
 
+            session_regenerate_id(true);
+
+            unset($_SESSION["faculty_id"]);
+            unset($_SESSION["parent_id"]);
+
+            unset($_SESSION["otp_verified_email"]);
+            unset($_SESSION["otp_verified_role"]);
+            unset($_SESSION["otp_verified_at"]);
+
             $_SESSION["student_id"] = $student["id"];
 
             echo "Login successful!";
 
         } else {
-
-            echo "Invalid password.";
-
+            echo "Invalid email or password.";
         }
 
     } else {
-
-        echo "Student not found.";
-
+        echo "Invalid email or password.";
     }
 
     $stmt->close();
-
 }
-
 
 /* ================================
    FACULTY LOGIN
@@ -69,11 +90,8 @@ if ($role === "student") {
 elseif ($role === "faculty") {
 
     $sql = "SELECT * FROM faculty WHERE email = ?";
-
     $stmt = $conn->prepare($sql);
-
     $stmt->bind_param("s", $email);
-
     $stmt->execute();
 
     $result = $stmt->get_result();
@@ -84,26 +102,29 @@ elseif ($role === "faculty") {
 
         if (password_verify($password, $faculty["password"])) {
 
+            session_regenerate_id(true);
+
+            unset($_SESSION["student_id"]);
+            unset($_SESSION["parent_id"]);
+
+            unset($_SESSION["otp_verified_email"]);
+            unset($_SESSION["otp_verified_role"]);
+            unset($_SESSION["otp_verified_at"]);
+
             $_SESSION["faculty_id"] = $faculty["id"];
 
             echo "Login successful!";
 
         } else {
-
-            echo "Invalid password.";
-
+            echo "Invalid email or password.";
         }
 
     } else {
-
-        echo "Faculty not found.";
-
+        echo "Invalid email or password.";
     }
 
     $stmt->close();
-
 }
-
 
 /* ================================
    PARENT LOGIN
@@ -112,11 +133,8 @@ elseif ($role === "faculty") {
 elseif ($role === "parent") {
 
     $sql = "SELECT * FROM parents WHERE email = ?";
-
     $stmt = $conn->prepare($sql);
-
     $stmt->bind_param("s", $email);
-
     $stmt->execute();
 
     $result = $stmt->get_result();
@@ -127,42 +145,29 @@ elseif ($role === "parent") {
 
         if (password_verify($password, $parent["password"])) {
 
-            // Clear any previous role's session
             session_regenerate_id(true);
 
             unset($_SESSION["student_id"]);
             unset($_SESSION["faculty_id"]);
 
-            // Store the authenticated parent account
+            unset($_SESSION["otp_verified_email"]);
+            unset($_SESSION["otp_verified_role"]);
+            unset($_SESSION["otp_verified_at"]);
+
             $_SESSION["parent_id"] = $parent["id"];
 
             echo "Login successful!";
 
         } else {
-
             echo "Invalid email or password.";
-
         }
 
     } else {
-
         echo "Invalid email or password.";
-
     }
 
     $stmt->close();
-
 }
-
-
-
-
-else {
-
-    echo "Invalid role.";
-
-}
-
 
 $conn->close();
 
