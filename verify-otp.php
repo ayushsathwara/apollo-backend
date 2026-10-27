@@ -1,7 +1,29 @@
 
 <?php
 
+$role = trim($_POST['role'] ?? '');
+
+$sessionNames = [
+    'student' => 'APOLLO_STUDENT_SESSION',
+    'faculty' => 'APOLLO_FACULTY_SESSION',
+    'parent'  => 'APOLLO_PARENT_SESSION'
+];
+
+if (!isset($sessionNames[$role])) {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'success' => false,
+        'message' => 'Invalid role.'
+    ]);
+    exit;
+}
+
+session_name($sessionNames[$role]);
 session_start();
+
+require_once __DIR__ . '/db.php';
+
+header('Content-Type: application/json');
 
 require_once __DIR__ . '/db.php';
 

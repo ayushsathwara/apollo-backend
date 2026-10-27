@@ -1,140 +1,136 @@
 <?php
 
+$role = strtolower(trim($_POST["role"] ?? ""));
+
+$sessionNames = [
+    "student" => "APOLLO_STUDENT_SESSION",
+    "faculty" => "APOLLO_FACULTY_SESSION",
+    "parent"  => "APOLLO_PARENT_SESSION"
+];
+
+if (!isset($sessionNames[$role])) {
+    http_response_code(400);
+    exit("Invalid role.");
+}
+
+session_name($sessionNames[$role]);
 session_start();
 
 include "../db.php";
 
-$email = trim($_POST["email"] ?? "");
+$email = $_POST["email"] ?? "";
 $password = $_POST["password"] ?? "";
 $role = $_POST["role"] ?? "";
 
-/* ================================
-   BASIC VALIDATION
-================================ */
-
 if ($email === "" || $password === "") {
-    echo "Email and password are required.";
-    exit;
+echo "Email and password are required.";
+exit;
 }
 
-if (!in_array($role, ["student", "faculty", "parent"], true)) {
-    echo "Invalid role.";
-    exit;
+if ($role === "") {
+echo "Please select a role.";
+exit;
 }
+
 
 /* ================================
-   OTP VERIFICATION CHECK
-================================ */
-
-$emailVerified =
-    isset($_SESSION["otp_verified_email"]) &&
-    isset($_SESSION["otp_verified_role"]) &&
-    isset($_SESSION["otp_verified_at"]) &&
-    strtolower($_SESSION["otp_verified_email"]) === strtolower($email) &&
-    $_SESSION["otp_verified_role"] === $role &&
-    (time() - (int)$_SESSION["otp_verified_at"]) <= 300 &&
-    (time() - (int)$_SESSION["otp_verified_at"]) >= 0;
-
-if (!$emailVerified) {
-    echo "Please verify your email with OTP first.";
-    exit;
-}
-
-/* ================================
-   STUDENT LOGIN
+  STUDENT LOGIN
 ================================ */
 
 if ($role === "student") {
 
-    $sql = "SELECT * FROM students WHERE email = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
+$sql = "SELECT * FROM students WHERE email = ?";
 
-    $result = $stmt->get_result();
+$stmt = $conn->prepare($sql);
 
-    if ($result->num_rows === 1) {
+$stmt->bind_param("s", $email);
 
-        $student = $result->fetch_assoc();
+$stmt->execute();
 
-        if (password_verify($password, $student["password"])) {
+$result = $stmt->get_result();
 
-            session_regenerate_id(true);
+if ($result->num_rows === 1) {
 
-            unset($_SESSION["faculty_id"]);
-            unset($_SESSION["parent_id"]);
+$student = $result->fetch_assoc();
 
-            unset($_SESSION["otp_verified_email"]);
-            unset($_SESSION["otp_verified_role"]);
-            unset($_SESSION["otp_verified_at"]);
+if (password_verify($password, $student["password"])) {
 
-            $_SESSION["student_id"] = $student["id"];
+$_SESSION["student_id"] = $student["id"];
 
-            echo "Login successful!";
+echo "Login successful!";
 
-        } else {
-            echo "Invalid email or password.";
-        }
+} else {
 
-    } else {
-        echo "Invalid email or password.";
-    }
+echo "Invalid password.";
 
-    $stmt->close();
 }
 
+} else {
+
+echo "Student not found.";
+
+}
+
+$stmt->close();
+
+}
+
+
 /* ================================
-   FACULTY LOGIN
+  FACULTY LOGIN
 ================================ */
 
 elseif ($role === "faculty") {
 
-    $sql = "SELECT * FROM faculty WHERE email = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
+$sql = "SELECT * FROM faculty WHERE email = ?";
 
-    $result = $stmt->get_result();
+$stmt = $conn->prepare($sql);
 
-    if ($result->num_rows === 1) {
+$stmt->bind_param("s", $email);
 
-        $faculty = $result->fetch_assoc();
+$stmt->execute();
 
-        if (password_verify($password, $faculty["password"])) {
+$result = $stmt->get_result();
 
-            session_regenerate_id(true);
+if ($result->num_rows === 1) {
 
-            unset($_SESSION["student_id"]);
-            unset($_SESSION["parent_id"]);
+$faculty = $result->fetch_assoc();
 
-            unset($_SESSION["otp_verified_email"]);
-            unset($_SESSION["otp_verified_role"]);
-            unset($_SESSION["otp_verified_at"]);
+if (password_verify($password, $faculty["password"])) {
 
-            $_SESSION["faculty_id"] = $faculty["id"];
+$_SESSION["faculty_id"] = $faculty["id"];
 
-            echo "Login successful!";
+echo "Login successful!";
 
-        } else {
-            echo "Invalid email or password.";
-        }
+} else {
 
-    } else {
-        echo "Invalid email or password.";
-    }
+echo "Invalid password.";
 
-    $stmt->close();
 }
 
+} else {
+
+echo "Faculty not found.";
+
+}
+
+$stmt->close();
+
+}
+
+
 /* ================================
-   PARENT LOGIN
+  PARENT LOGIN
 ================================ */
 
 elseif ($role === "parent") {
 
     $sql = "SELECT * FROM parents WHERE email = ?";
+
     $stmt = $conn->prepare($sql);
+
     $stmt->bind_param("s", $email);
+
     $stmt->execute();
 
     $result = $stmt->get_result();
@@ -145,30 +141,41 @@ elseif ($role === "parent") {
 
         if (password_verify($password, $parent["password"])) {
 
+            // Clear any previous role's session
             session_regenerate_id(true);
 
             unset($_SESSION["student_id"]);
             unset($_SESSION["faculty_id"]);
 
-            unset($_SESSION["otp_verified_email"]);
-            unset($_SESSION["otp_verified_role"]);
-            unset($_SESSION["otp_verified_at"]);
-
+            // Store the authenticated parent account
             $_SESSION["parent_id"] = $parent["id"];
 
             echo "Login successful!";
 
         } else {
+
             echo "Invalid email or password.";
+
         }
 
     } else {
+
         echo "Invalid email or password.";
+
     }
 
     $stmt->close();
+
 }
 
-$conn->close();
 
-?>
+
+
+else {
+
+echo "Invalid role.";
+
+}
+
+
+$conn->close();

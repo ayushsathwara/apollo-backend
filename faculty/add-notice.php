@@ -1,4 +1,5 @@
 <?php
+session_name('APOLLO_FACULTY_SESSION');
 session_start();
 
 header("Content-Type: application/json");

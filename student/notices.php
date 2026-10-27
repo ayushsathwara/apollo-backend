@@ -1,5 +1,6 @@
 
 <?php
+session_name('APOLLO_STUDENT_SESSION');
 session_start();
 header("Content-Type: application/json");
 require_once __DIR__ . "/../db.php";

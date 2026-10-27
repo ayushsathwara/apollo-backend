@@ -1,5 +1,5 @@
-
 <?php
+session_name('APOLLO_PARENT_SESSION');
 session_start();
 
 require_once "../db.php";

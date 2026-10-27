@@ -15,6 +15,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     exit;
 }
 
+
 // Read login data
 $input = json_decode(file_get_contents("php://input"), true);
 
@@ -29,6 +30,7 @@ if ($email === "" || $password === "") {
     ]);
     exit;
 }
+
 
 // Find admin account
 $stmt = $conn->prepare(

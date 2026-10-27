@@ -1,4 +1,5 @@
 <?php
+session_name('APOLLO_PARENT_SESSION');
 session_start();
 header("Content-Type: application/json");
 

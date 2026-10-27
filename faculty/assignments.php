@@ -1,5 +1,5 @@
 <?php
-
+session_name('APOLLO_FACULTY_SESSION');
 session_start();
 
 include "../db.php";
