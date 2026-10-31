@@ -33,3 +33,4 @@ function createMailer()
 
     return $mail;
 }
+?>

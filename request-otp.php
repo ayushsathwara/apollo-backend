@@ -27,7 +27,8 @@ require_once __DIR__ . '/mail-config.php';
 
 header('Content-Type: application/json');
 
-function respond($success, $message) {
+function respond($success, $message)
+{
     echo json_encode([
         'success' => $success,
         'message' => $message
@@ -93,6 +94,8 @@ $stmt->bind_param('ssss', $email, $role, $otpHash, $expiresAt);
 $stmt->execute();
 $stmt->close();
 
+error_log("OTP CHECK 2: Account verified, OTP saved. Starting email.");
+
 try {
     $mail = createMailer();
     $mail->addAddress($email);
@@ -112,10 +115,11 @@ try {
 
     $mail->send();
 
-    respond(true, 'OTP sent. Enter the code from your email, then click LOGIN.');
 
+    respond(true, 'OTP sent. Enter the code from your email, then click LOGIN.');
 } catch (Throwable $e) {
-    error_log('OTP email failed: ' . $e->getMessage());
+
+    error_log("OTP CHECK 3: " . $e->getMessage());
 
     $stmt = $conn->prepare(
         'DELETE FROM login_otps WHERE email = ? AND role = ?'
