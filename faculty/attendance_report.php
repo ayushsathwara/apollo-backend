@@ -1,4 +1,6 @@
+
 <?php
+
 session_name('APOLLO_FACULTY_SESSION');
 session_start();
 
@@ -7,7 +9,7 @@ include "../db.php";
 header("Content-Type: application/json");
 
 
-/* Check faculty login */
+/* CHECK FACULTY LOGIN */
 
 if (!isset($_SESSION["faculty_id"])) {
 
@@ -19,18 +21,79 @@ if (!isset($_SESSION["faculty_id"])) {
     exit;
 }
 
-
 $faculty_id = $_SESSION["faculty_id"];
 
 $subject = $_GET["subject"] ?? "";
-
 $date = $_GET["date"] ?? "";
 
+$from_date = $_GET["from_date"] ?? "";
+$to_date = $_GET["to_date"] ?? "";
 
-/*
-    Get only subjects assigned
-    to the logged-in faculty
-*/
+
+/* VALIDATE DATE RANGE */
+
+if (($from_date === "") !== ($to_date === "")) {
+
+    echo json_encode([
+        "status" => "error",
+        "message" => "Please select both From Date and To Date."
+    ]);
+
+    exit;
+}
+
+function validDate($date) {
+
+    $d = DateTime::createFromFormat("!Y-m-d", $date);
+
+    return $d && $d->format("Y-m-d") === $date;
+}
+
+if ($date !== "" && !validDate($date)) {
+
+    echo json_encode([
+        "status" => "error",
+        "message" => "Invalid attendance date."
+    ]);
+
+    exit;
+}
+
+if ($from_date !== "" && $to_date !== "") {
+
+    if (!validDate($from_date) || !validDate($to_date)) {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "Invalid date range."
+        ]);
+
+        exit;
+    }
+
+    if ($from_date > $to_date) {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "From Date cannot be after To Date."
+        ]);
+
+        exit;
+    }
+
+    if ($date !== "") {
+
+        echo json_encode([
+            "status" => "error",
+            "message" => "Use either a single date or a date range."
+        ]);
+
+        exit;
+    }
+}
+
+
+/* GET FACULTY ASSIGNED SUBJECTS */
 
 $subject_sql = "
     SELECT subject
@@ -38,42 +101,32 @@ $subject_sql = "
     WHERE faculty_id = ?
 ";
 
-$subject_stmt =
-    $conn->prepare($subject_sql);
+$subject_stmt = $conn->prepare($subject_sql);
 
-$subject_stmt->bind_param(
-    "i",
-    $faculty_id
-);
+$subject_stmt->bind_param("i", $faculty_id);
 
 $subject_stmt->execute();
 
-$subject_result =
-    $subject_stmt->get_result();
-
+$subject_result = $subject_stmt->get_result();
 
 $allowed_subjects = [];
 
-while ($row =
-    $subject_result->fetch_assoc()) {
+while ($row = $subject_result->fetch_assoc()) {
 
-    $allowed_subjects[] =
-        $row["subject"];
+    $allowed_subjects[] = $row["subject"];
 
 }
 
 $subject_stmt->close();
 
 
-/* No subjects assigned */
+/* NO SUBJECTS ASSIGNED */
 
 if (empty($allowed_subjects)) {
 
     echo json_encode([
         "status" => "success",
-
         "report" => [],
-
         "summary" => [
             "total_students" => 0,
             "total_records" => 0,
@@ -88,67 +141,41 @@ if (empty($allowed_subjects)) {
 }
 
 
-/*
-    Check subject permission
-*/
+/* CHECK SUBJECT PERMISSION */
 
-if ($subject !== "") {
+if ($subject !== "" && !in_array($subject, $allowed_subjects, true)) {
 
-    if (!in_array(
-        $subject,
-        $allowed_subjects
-    )) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "You are not authorized to view this subject."
+    ]);
 
-        echo json_encode([
-            "status" => "error",
+    $conn->close();
 
-            "message" =>
-                "You are not authorized to view this subject."
-        ]);
-
-        $conn->close();
-
-        exit;
-    }
-
+    exit;
 }
 
 
-/*
-    Build placeholders
-*/
+/* BUILD SUBJECT PLACEHOLDERS */
 
-$placeholders =
-    implode(
-        ",",
-        array_fill(
-            0,
-            count($allowed_subjects),
-            "?"
-        )
-    );
+$placeholders = implode(
+    ",",
+    array_fill(0, count($allowed_subjects), "?")
+);
 
 
-/*
-    Base query
-*/
+/* BASE QUERY */
 
 $sql = "
     SELECT
 
         s.name,
-
         s.roll_no,
-
         a.subject,
 
-        SUM(
-            a.status = 'Present'
-        ) AS present,
+        SUM(a.status = 'Present') AS present,
 
-        SUM(
-            a.status = 'Absent'
-        ) AS absent,
+        SUM(a.status = 'Absent') AS absent,
 
         COUNT(*) AS total
 
@@ -161,35 +188,36 @@ $sql = "
 ";
 
 
-/*
-    Specific subject
-*/
+/* SPECIFIC SUBJECT */
 
 if ($subject !== "") {
 
-    $sql .= "
-        AND a.subject = ?
-    ";
+    $sql .= " AND a.subject = ? ";
 
 }
 
 
-/*
-    Specific date
-*/
+/* SINGLE DATE FILTER */
 
 if ($date !== "") {
 
+    $sql .= " AND a.attendance_date = ? ";
+
+}
+
+
+/* DATE RANGE FILTER */
+
+if ($from_date !== "" && $to_date !== "") {
+
     $sql .= "
-        AND a.attendance_date = ?
+        AND a.attendance_date BETWEEN ? AND ?
     ";
 
 }
 
 
-/*
-    Group report
-*/
+/* GROUP REPORT */
 
 $sql .= "
 
@@ -205,67 +233,53 @@ $sql .= "
 ";
 
 
-$stmt =
-    $conn->prepare($sql);
+$stmt = $conn->prepare($sql);
 
 
-/*
-    Bind parameters
-*/
+/* BIND PARAMETERS */
 
-$types =
-    str_repeat(
-        "s",
-        count($allowed_subjects)
-    );
+$types = str_repeat("s", count($allowed_subjects));
 
-$params =
-    $allowed_subjects;
+$params = $allowed_subjects;
 
-
-/* Add subject */
 
 if ($subject !== "") {
 
     $types .= "s";
-
-    $params[] =
-        $subject;
+    $params[] = $subject;
 
 }
 
-
-/* Add date */
 
 if ($date !== "") {
 
     $types .= "s";
-
-    $params[] =
-        $date;
+    $params[] = $date;
 
 }
 
 
-/*
-    Bind dynamically
-*/
+if ($from_date !== "" && $to_date !== "") {
+
+    $types .= "ss";
+
+    $params[] = $from_date;
+    $params[] = $to_date;
+
+}
+
+
+/* DYNAMIC BINDING */
 
 $bind_params = [];
 
-$bind_params[] =
-    $types;
+$bind_params[] = $types;
 
+foreach ($params as $key => $value) {
 
-foreach (
-    $params as $key => $value
-) {
-
-    $bind_params[] =
-        &$params[$key];
+    $bind_params[] = &$params[$key];
 
 }
-
 
 call_user_func_array(
     [$stmt, "bind_param"],
@@ -273,88 +287,53 @@ call_user_func_array(
 );
 
 
-/* Execute */
+/* EXECUTE QUERY */
 
 $stmt->execute();
 
-$result =
-    $stmt->get_result();
+$result = $stmt->get_result();
 
 
 $report = [];
 
 $totalPresent = 0;
-
 $totalAbsent = 0;
-
 $totalRecords = 0;
 
 $students = [];
 
 
-/*
-    Process report
-*/
+/* PROCESS REPORT */
 
-while (
-    $row =
-    $result->fetch_assoc()
-) {
+while ($row = $result->fetch_assoc()) {
 
-    $present =
-        (int)$row["present"];
-
-    $absent =
-        (int)$row["absent"];
-
-    $total =
-        (int)$row["total"];
-
+    $present = (int)$row["present"];
+    $absent = (int)$row["absent"];
+    $total = (int)$row["total"];
 
     $percentage = 0;
 
-
     if ($total > 0) {
 
-        $percentage =
-            round(
-                ($present / $total) * 100,
-                2
-            );
+        $percentage = round(
+            ($present / $total) * 100,
+            2
+        );
 
     }
 
+    $row["present"] = $present;
+    $row["absent"] = $absent;
+    $row["total"] = $total;
+    $row["percentage"] = $percentage;
 
-    $row["present"] =
-        $present;
+    $report[] = $row;
 
-    $row["absent"] =
-        $absent;
+    $totalPresent += $present;
+    $totalAbsent += $absent;
+    $totalRecords += $total;
 
-    $row["total"] =
-        $total;
-
-    $row["percentage"] =
-        $percentage;
-
-
-    $report[] =
-        $row;
-
-
-    $totalPresent +=
-        $present;
-
-    $totalAbsent +=
-        $absent;
-
-    $totalRecords +=
-        $total;
-
-
-    $students[
-        $row["roll_no"]
-    ] = true;
+    $students[$row["roll_no"]] = true;
 
 }
 
@@ -364,31 +343,23 @@ $stmt->close();
 $conn->close();
 
 
-/*
-    Send response
-*/
+/* SEND RESPONSE */
 
 echo json_encode([
 
-    "status" =>
-        "success",
+    "status" => "success",
 
-    "report" =>
-        $report,
+    "report" => $report,
 
     "summary" => [
 
-        "total_students" =>
-            count($students),
+        "total_students" => count($students),
 
-        "total_records" =>
-            $totalRecords,
+        "total_records" => $totalRecords,
 
-        "total_present" =>
-            $totalPresent,
+        "total_present" => $totalPresent,
 
-        "total_absent" =>
-            $totalAbsent
+        "total_absent" => $totalAbsent
 
     ]
 
