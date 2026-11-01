@@ -1,9 +1,14 @@
+
 <?php
+
+header("Content-Type: application/json");
+
 session_name('APOLLO_STUDENT_SESSION');
 session_start();
 
 include "../db.php";
 
+// Check student login
 if (!isset($_SESSION["student_id"])) {
     echo json_encode([
         "status" => "error",
@@ -14,14 +19,22 @@ if (!isset($_SESSION["student_id"])) {
 
 $student_id = $_SESSION["student_id"];
 
-$sql = "SELECT id, name, roll_no, email, course, semester
+// Fetch student details
+$sql = "SELECT id, name, roll_no, email, course, semester, profile_photo
         FROM students
         WHERE id = ?";
 
 $stmt = $conn->prepare($sql);
 
-$stmt->bind_param("i", $student_id);
+if (!$stmt) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Database query failed"
+    ]);
+    exit;
+}
 
+$stmt->bind_param("i", $student_id);
 $stmt->execute();
 
 $result = $stmt->get_result();
