@@ -1,4 +1,6 @@
+
 <?php
+
 session_name('APOLLO_FACULTY_SESSION');
 session_start();
 
@@ -6,9 +8,7 @@ include "../db.php";
 
 header("Content-Type: application/json");
 
-
-/* Check faculty login */
-
+// Check faculty login
 if (!isset($_SESSION["faculty_id"])) {
 
     echo json_encode([
@@ -19,17 +19,23 @@ if (!isset($_SESSION["faculty_id"])) {
     exit;
 }
 
-
 $faculty_id = $_SESSION["faculty_id"];
 
-
-/* Get faculty information */
-
-$sql = "SELECT id, name, email, employee_id, department
+// Get faculty information
+$sql = "SELECT id, name, email, employee_id, department, profile_photo
         FROM faculty
         WHERE id = ?";
 
 $stmt = $conn->prepare($sql);
+
+if (!$stmt) {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Database query failed"
+    ]);
+
+    exit;
+}
 
 $stmt->bind_param("i", $faculty_id);
 
@@ -37,9 +43,7 @@ $stmt->execute();
 
 $result = $stmt->get_result();
 
-
-/* Faculty found */
-
+// Faculty found
 if ($result->num_rows === 1) {
 
     $faculty = $result->fetch_assoc();
@@ -48,24 +52,18 @@ if ($result->num_rows === 1) {
         "status" => "success",
         "faculty" => $faculty
     ]);
-
 }
 
-
-/* Faculty not found */
-
+// Faculty not found
 else {
 
     echo json_encode([
         "status" => "error",
         "message" => "Faculty not found"
     ]);
-
 }
 
-
 $stmt->close();
-
 $conn->close();
 
 ?>
