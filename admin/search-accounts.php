@@ -35,8 +35,12 @@ if (!isset($tables[$accountType])) {
 $table = $tables[$accountType];
 $searchTerm = "%" . $search . "%";
 
+$columns = $accountType === "parent"
+    ? "id, name, email, phone"
+    : "id, name, email";
+
 $stmt = $conn->prepare(
-    "SELECT id, name, email
+    "SELECT $columns
      FROM `$table`
      WHERE name LIKE ? OR email LIKE ?
      ORDER BY name ASC

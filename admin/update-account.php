@@ -5,7 +5,10 @@ header("Content-Type: application/json");
 
 include "../db.php";
 
-// Only logged-in admins can update accounts
+// =========================================
+// ADMIN AUTHENTICATION
+// =========================================
+
 if (!isset($_SESSION["admin_id"])) {
     http_response_code(401);
     echo json_encode([
@@ -15,6 +18,10 @@ if (!isset($_SESSION["admin_id"])) {
     exit;
 }
 
+// =========================================
+// REQUEST METHOD
+// =========================================
+
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     http_response_code(405);
     echo json_encode([
@@ -23,6 +30,10 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     ]);
     exit;
 }
+
+// =========================================
+// RECEIVE JSON DATA
+// =========================================
 
 $input = json_decode(file_get_contents("php://input"), true);
 
@@ -36,14 +47,20 @@ if (!is_array($input)) {
 }
 
 $accountType = $input["account_type"] ?? "";
+
 $accountId = filter_var(
     $input["account_id"] ?? null,
     FILTER_VALIDATE_INT
 );
+
 $email = trim($input["email"] ?? "");
 $password = $input["password"] ?? "";
+$phone = trim($input["phone"] ?? "");
 
-// Whitelist table names to prevent SQL injection
+// =========================================
+// ACCOUNT TYPE VALIDATION
+// =========================================
+
 $tables = [
     "student" => "students",
     "parent" => "parents",
@@ -59,6 +76,10 @@ if (!isset($tables[$accountType]) || !$accountId || $accountId < 1) {
     exit;
 }
 
+// =========================================
+// EMAIL VALIDATION
+// =========================================
+
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
     echo json_encode([
@@ -67,6 +88,10 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     ]);
     exit;
 }
+
+// =========================================
+// PASSWORD VALIDATION
+// =========================================
 
 if ($password !== "" && strlen($password) < 8) {
     http_response_code(400);
@@ -77,48 +102,145 @@ if ($password !== "" && strlen($password) < 8) {
     exit;
 }
 
+// =========================================
+// PARENT PHONE VALIDATION
+// =========================================
+
+if ($accountType === "parent" && strlen($phone) > 20) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "Contact number cannot exceed 20 characters."
+    ]);
+    exit;
+}
+
 $table = $tables[$accountType];
 
-// Check whether the account exists
-$check = $conn->prepare("SELECT id FROM `$table` WHERE id = ?");
+// =========================================
+// CHECK ACCOUNT EXISTS
+// =========================================
+
+$check = $conn->prepare(
+    "SELECT id FROM `$table` WHERE id = ?"
+);
+
 $check->bind_param("i", $accountId);
 $check->execute();
+
 $result = $check->get_result();
 
 if ($result->num_rows === 0) {
     http_response_code(404);
+
     echo json_encode([
         "success" => false,
         "message" => "Account not found."
     ]);
+
     $check->close();
     $conn->close();
     exit;
 }
+
 $check->close();
 
-// Update email; update password only when provided
-if ($password !== "") {
-    $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+// =========================================
+// UPDATE PARENT ACCOUNT
+// =========================================
 
-    $stmt = $conn->prepare(
-        "UPDATE `$table` SET email = ?, password = ? WHERE id = ?"
-    );
-    $stmt->bind_param("ssi", $email, $hashedPassword, $accountId);
+if ($accountType === "parent") {
+
+    if ($password !== "") {
+
+        $hashedPassword = password_hash(
+            $password,
+            PASSWORD_DEFAULT
+        );
+
+        $stmt = $conn->prepare(
+            "UPDATE parents
+             SET email = ?, phone = ?, password = ?
+             WHERE id = ?"
+        );
+
+        $stmt->bind_param(
+            "sssi",
+            $email,
+            $phone,
+            $hashedPassword,
+            $accountId
+        );
+    } else {
+
+        $stmt = $conn->prepare(
+            "UPDATE parents
+             SET email = ?, phone = ?
+             WHERE id = ?"
+        );
+
+        $stmt->bind_param(
+            "ssi",
+            $email,
+            $phone,
+            $accountId
+        );
+    }
 } else {
-    $stmt = $conn->prepare(
-        "UPDATE `$table` SET email = ? WHERE id = ?"
-    );
-    $stmt->bind_param("si", $email, $accountId);
+
+    // =========================================
+    // UPDATE STUDENT / FACULTY ACCOUNT
+    // =========================================
+
+    if ($password !== "") {
+
+        $hashedPassword = password_hash(
+            $password,
+            PASSWORD_DEFAULT
+        );
+
+        $stmt = $conn->prepare(
+            "UPDATE `$table`
+             SET email = ?, password = ?
+             WHERE id = ?"
+        );
+
+        $stmt->bind_param(
+            "ssi",
+            $email,
+            $hashedPassword,
+            $accountId
+        );
+    } else {
+
+        $stmt = $conn->prepare(
+            "UPDATE `$table`
+             SET email = ?
+             WHERE id = ?"
+        );
+
+        $stmt->bind_param(
+            "si",
+            $email,
+            $accountId
+        );
+    }
 }
 
+// =========================================
+// EXECUTE UPDATE
+// =========================================
+
 if ($stmt->execute()) {
+
     echo json_encode([
         "success" => true,
         "message" => "Account updated successfully."
     ]);
 } else {
+
     http_response_code(500);
+
     echo json_encode([
         "success" => false,
         "message" => "Could not update account. The email may already be in use."
@@ -127,4 +249,5 @@ if ($stmt->execute()) {
 
 $stmt->close();
 $conn->close();
+
 ?>
