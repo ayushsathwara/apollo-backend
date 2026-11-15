@@ -1,7 +1,7 @@
 
 <?php
 
-$role = trim($_POST['role'] ?? '');
+$role = strtolower(trim($_POST['role'] ?? ''));
 
 $sessionNames = [
     'student' => 'APOLLO_STUDENT_SESSION',
@@ -9,8 +9,9 @@ $sessionNames = [
     'parent'  => 'APOLLO_PARENT_SESSION'
 ];
 
+header('Content-Type: application/json');
+
 if (!isset($sessionNames[$role])) {
-    header('Content-Type: application/json');
     echo json_encode([
         'success' => false,
         'message' => 'Invalid role.'
@@ -24,9 +25,6 @@ session_start();
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mail-config.php';
 
-
-header('Content-Type: application/json');
-
 function respond($success, $message)
 {
     echo json_encode([
@@ -38,41 +36,68 @@ function respond($success, $message)
 
 $email = trim($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
-$role = trim($_POST['role'] ?? '');
+$course = strtoupper(trim($_POST['course'] ?? ''));
 
-if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
-    respond(false, 'Enter a valid email and password.');
+if (
+    !filter_var($email, FILTER_VALIDATE_EMAIL) ||
+    $password === '' ||
+    !in_array($course, ['BCA', 'MCA', 'BBA'], true)
+) {
+    respond(false, 'Enter valid login details and select a course.');
 }
 
-$tables = [
-    'student' => 'students',
-    'faculty' => 'faculty',
-    'parent' => 'parents'
-];
+// Check account according to role and selected course
+if ($role === 'student') {
 
-if (!isset($tables[$role])) {
-    respond(false, 'Invalid role.');
+    $stmt = $conn->prepare(
+        "SELECT id, password FROM students
+         WHERE email = ? AND course = ? LIMIT 1"
+    );
+
+    $stmt->bind_param('ss', $email, $course);
+} elseif ($role === 'faculty') {
+
+    $stmt = $conn->prepare(
+        "SELECT id, password FROM faculty
+         WHERE email = ? AND department = ? LIMIT 1"
+    );
+
+    $stmt->bind_param('ss', $email, $course);
+} else {
+
+    $stmt = $conn->prepare(
+        "SELECT p.id, p.password
+         FROM parents p
+         INNER JOIN students s ON p.student_id = s.id
+         WHERE p.email = ? AND s.course = ?
+         LIMIT 1"
+    );
+
+    $stmt->bind_param('ss', $email, $course);
 }
 
-$table = $tables[$role];
+if (!$stmt) {
+    respond(false, 'Database error. Please try again later.');
+}
 
-// Check account and password before sending OTP
-$stmt = $conn->prepare(
-    "SELECT id, password FROM `$table` WHERE email = ? LIMIT 1"
-);
-
-$stmt->bind_param('s', $email);
 $stmt->execute();
 
 $result = $stmt->get_result();
 $account = $result->fetch_assoc();
+
 $stmt->close();
 
 if (!$account || !password_verify($password, $account['password'])) {
-    respond(false, 'Invalid email or password.');
+    respond(false, 'Invalid email, password or selected course.');
 }
 
-// Generate a secure six-digit OTP
+// Store verified account details in session
+$_SESSION['otp_course'] = $course;
+$_SESSION['otp_account_id'] = (int)$account['id'];
+$_SESSION['otp_email'] = $email;
+$_SESSION['otp_role'] = $role;
+
+// Generate secure six-digit OTP
 $otp = (string) random_int(100000, 999999);
 $otpHash = password_hash($otp, PASSWORD_DEFAULT);
 $expiresAt = date('Y-m-d H:i:s', time() + 300);
@@ -81,22 +106,28 @@ $expiresAt = date('Y-m-d H:i:s', time() + 300);
 $stmt = $conn->prepare(
     'DELETE FROM login_otps WHERE email = ? AND role = ?'
 );
+
 $stmt->bind_param('ss', $email, $role);
 $stmt->execute();
 $stmt->close();
 
-// Save the new OTP hash
+// Save new OTP hash
 $stmt = $conn->prepare(
     'INSERT INTO login_otps (email, role, otp_hash, expires_at)
      VALUES (?, ?, ?, ?)'
 );
+
 $stmt->bind_param('ssss', $email, $role, $otpHash, $expiresAt);
-$stmt->execute();
+
+if (!$stmt->execute()) {
+    $stmt->close();
+    respond(false, 'Could not generate verification code.');
+}
+
 $stmt->close();
 
-error_log("OTP CHECK 2: Account verified, OTP saved. Starting email.");
-
 try {
+
     $mail = createMailer();
     $mail->addAddress($email);
     $mail->Subject = 'Your Apollo Attendance verification code';
@@ -115,15 +146,15 @@ try {
 
     $mail->send();
 
-
     respond(true, 'OTP sent. Enter the code from your email, then click LOGIN.');
 } catch (Throwable $e) {
 
-    error_log("OTP CHECK 3: " . $e->getMessage());
+    error_log("OTP email error: " . $e->getMessage());
 
     $stmt = $conn->prepare(
         'DELETE FROM login_otps WHERE email = ? AND role = ?'
     );
+
     $stmt->bind_param('ss', $email, $role);
     $stmt->execute();
     $stmt->close();

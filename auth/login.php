@@ -1,6 +1,10 @@
+
 <?php
 
 $role = strtolower(trim($_POST["role"] ?? ""));
+$email = trim($_POST["email"] ?? "");
+$password = $_POST["password"] ?? "";
+$course = strtoupper(trim($_POST["course"] ?? ""));
 
 $sessionNames = [
     "student" => "APOLLO_STUDENT_SESSION",
@@ -13,169 +17,106 @@ if (!isset($sessionNames[$role])) {
     exit("Invalid role.");
 }
 
+if ($email === "" || $password === "" || $course === "") {
+    http_response_code(400);
+    exit("Email, password and course are required.");
+}
+
 session_name($sessionNames[$role]);
 session_start();
 
-include "../db.php";
+// Check OTP verification proof
+$verifiedEmail = $_SESSION["otp_verified_email"] ?? "";
+$verifiedRole = $_SESSION["otp_verified_role"] ?? "";
+$verifiedCourse = $_SESSION["otp_verified_course"] ?? "";
+$verifiedAt = $_SESSION["otp_verified_at"] ?? 0;
+$accountId = (int)($_SESSION["otp_account_id"] ?? 0);
 
-$email = $_POST["email"] ?? "";
-$password = $_POST["password"] ?? "";
-$role = $_POST["role"] ?? "";
-
-if ($email === "" || $password === "") {
-echo "Email and password are required.";
-exit;
+if (
+    $verifiedEmail !== $email ||
+    $verifiedRole !== $role ||
+    $verifiedCourse !== $course ||
+    $accountId <= 0 ||
+    !$verifiedAt ||
+    (time() - $verifiedAt) > 300
+) {
+    http_response_code(401);
+    exit("OTP verification required. Please request a new OTP.");
 }
 
-if ($role === "") {
-echo "Please select a role.";
-exit;
-}
+// Consume OTP proof
+unset(
+    $_SESSION["otp_verified_email"],
+    $_SESSION["otp_verified_role"],
+    $_SESSION["otp_verified_course"],
+    $_SESSION["otp_verified_at"],
+    $_SESSION["otp_course"],
+    $_SESSION["otp_account_id"],
+    $_SESSION["otp_email"],
+    $_SESSION["otp_role"]
+);
 
+require_once "../db.php";
 
-/* ================================
-  STUDENT LOGIN
-================================ */
+$account = null;
 
+// Find the exact account verified during OTP request
 if ($role === "student") {
 
-$sql = "SELECT * FROM students WHERE email = ?";
+    $stmt = $conn->prepare(
+        "SELECT id FROM students
+         WHERE id = ? AND email = ? AND course = ? LIMIT 1"
+    );
 
-$stmt = $conn->prepare($sql);
+    $stmt->bind_param("iss", $accountId, $email, $course);
+} elseif ($role === "faculty") {
 
-$stmt->bind_param("s", $email);
+    $stmt = $conn->prepare(
+        "SELECT id FROM faculty
+         WHERE id = ? AND email = ? AND department = ? LIMIT 1"
+    );
 
-$stmt->execute();
+    $stmt->bind_param("iss", $accountId, $email, $course);
+} elseif ($role === "parent") {
+
+    $stmt = $conn->prepare(
+        "SELECT p.id
+         FROM parents p
+         INNER JOIN students s ON p.student_id = s.id
+         WHERE p.id = ? AND p.email = ? AND s.course = ?
+         LIMIT 1"
+    );
+
+    $stmt->bind_param("iss", $accountId, $email, $course);
+}
+
+if (!$stmt || !$stmt->execute()) {
+    http_response_code(500);
+    exit("Database error. Please try again.");
+}
 
 $result = $stmt->get_result();
-
-if ($result->num_rows === 1) {
-
-$student = $result->fetch_assoc();
-
-if (password_verify($password, $student["password"])) {
-
-$_SESSION["student_id"] = $student["id"];
-
-echo "Login successful!";
-
-} else {
-
-echo "Invalid password.";
-
-}
-
-} else {
-
-echo "Student not found.";
-
-}
-
+$account = $result->fetch_assoc();
 $stmt->close();
 
+if (!$account) {
+    http_response_code(401);
+    exit("Account or selected course does not match.");
 }
 
+// Successful login
+session_regenerate_id(true);
 
-/* ================================
-  FACULTY LOGIN
-================================ */
-
-elseif ($role === "faculty") {
-
-$sql = "SELECT * FROM faculty WHERE email = ?";
-
-$stmt = $conn->prepare($sql);
-
-$stmt->bind_param("s", $email);
-
-$stmt->execute();
-
-$result = $stmt->get_result();
-
-if ($result->num_rows === 1) {
-
-$faculty = $result->fetch_assoc();
-
-if (password_verify($password, $faculty["password"])) {
-
-$_SESSION["faculty_id"] = $faculty["id"];
-
-echo "Login successful!";
-
-} else {
-
-echo "Invalid password.";
-
+if ($role === "student") {
+    $_SESSION["student_id"] = $account["id"];
+} elseif ($role === "faculty") {
+    $_SESSION["faculty_id"] = $account["id"];
+} elseif ($role === "parent") {
+    $_SESSION["parent_id"] = $account["id"];
 }
-
-} else {
-
-echo "Faculty not found.";
-
-}
-
-$stmt->close();
-
-}
-
-
-/* ================================
-  PARENT LOGIN
-================================ */
-
-elseif ($role === "parent") {
-
-    $sql = "SELECT * FROM parents WHERE email = ?";
-
-    $stmt = $conn->prepare($sql);
-
-    $stmt->bind_param("s", $email);
-
-    $stmt->execute();
-
-    $result = $stmt->get_result();
-
-    if ($result->num_rows === 1) {
-
-        $parent = $result->fetch_assoc();
-
-        if (password_verify($password, $parent["password"])) {
-
-            // Clear any previous role's session
-            session_regenerate_id(true);
-
-            unset($_SESSION["student_id"]);
-            unset($_SESSION["faculty_id"]);
-
-            // Store the authenticated parent account
-            $_SESSION["parent_id"] = $parent["id"];
-
-            echo "Login successful!";
-
-        } else {
-
-            echo "Invalid email or password.";
-
-        }
-
-    } else {
-
-        echo "Invalid email or password.";
-
-    }
-
-    $stmt->close();
-
-}
-
-
-
-
-else {
-
-echo "Invalid role.";
-
-}
-
 
 $conn->close();
+
+echo "Login successful!";
+
+?>
