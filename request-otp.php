@@ -25,7 +25,7 @@ session_start();
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mail-config.php';
 
-function respond($success, $message)
+function respond(bool $success, string $message): void
 {
     echo json_encode([
         'success' => $success,

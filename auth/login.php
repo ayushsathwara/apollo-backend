@@ -59,6 +59,7 @@ unset(
 require_once "../db.php";
 
 $account = null;
+$stmt = null;
 
 // Find the exact account verified during OTP request
 if ($role === "student") {
