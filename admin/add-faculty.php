@@ -21,10 +21,13 @@ $data = json_decode(file_get_contents("php://input"), true);
 $name = trim($data["name"] ?? "");
 $email = trim($data["email"] ?? "");
 $employeeId = trim($data["employee_id"] ?? "");
-$department = trim($data["department"] ?? "");
+$department = strtoupper(trim($data["department"] ?? ""));
 $password = $data["password"] ?? "";
 
-// Validate fields
+// Supported courses
+$allowedCourses = ["BCA", "MCA", "BBA"];
+
+// Validate required fields
 if (
     $name === "" ||
     $email === "" ||
@@ -40,6 +43,7 @@ if (
     exit;
 }
 
+// Validate email
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
     echo json_encode([
@@ -49,6 +53,17 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     exit;
 }
 
+// Validate course
+if (!in_array($department, $allowedCourses, true)) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "message" => "Select a valid course: BCA, MCA or BBA."
+    ]);
+    exit;
+}
+
+// Validate password
 if (strlen($password) < 8) {
     http_response_code(400);
     echo json_encode([
@@ -58,16 +73,19 @@ if (strlen($password) < 8) {
     exit;
 }
 
-// Check whether email or employee ID already exists
+// Check duplicate email or employee ID
 $check = $conn->prepare(
-    "SELECT id FROM faculty WHERE email = ? OR employee_id = ?"
+    "SELECT id FROM faculty WHERE email = ? OR employee_id = ? LIMIT 1"
 );
+
 $check->bind_param("ss", $email, $employeeId);
 $check->execute();
+
 $result = $check->get_result();
 
 if ($result->num_rows > 0) {
     $check->close();
+
     http_response_code(409);
     echo json_encode([
         "success" => false,
@@ -75,9 +93,10 @@ if ($result->num_rows > 0) {
     ]);
     exit;
 }
+
 $check->close();
 
-// Hash password before storing it
+// Hash password
 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
 // Insert faculty
