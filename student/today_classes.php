@@ -29,6 +29,7 @@ if (!isset($_SESSION["student_id"])) {
 $class_date = date("Y-m-d");
 
 
+
 $sql = "
     SELECT
         tc.id,
@@ -43,16 +44,22 @@ $sql = "
     INNER JOIN faculty f
         ON tc.faculty_id = f.id
 
+    INNER JOIN students st
+        ON st.id = ?
+        AND f.department = st.course
+
     WHERE tc.class_date = ?
 
     ORDER BY tc.start_time ASC
 ";
 
 
+
 $stmt = $conn->prepare($sql);
 
 $stmt->bind_param(
-    "s",
+    "is",
+    $student_id,
     $class_date
 );
 
@@ -67,7 +74,6 @@ $classes = [];
 while ($row = $result->fetch_assoc()) {
 
     $classes[] = $row;
-
 }
 
 
@@ -83,5 +89,3 @@ echo json_encode([
 
 $stmt->close();
 $conn->close();
-
-?>

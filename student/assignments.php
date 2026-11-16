@@ -29,6 +29,7 @@ $student_id = $_SESSION["student_id"];
    FETCH ASSIGNMENTS
 ================================ */
 
+
 $sql = "
     SELECT
         a.id,
@@ -63,12 +64,17 @@ $sql = "
     INNER JOIN faculty f
         ON a.faculty_id = f.id
 
+    INNER JOIN students st
+        ON st.id = ?
+        AND f.department = st.course
+
     LEFT JOIN assignment_submissions s
         ON a.id = s.assignment_id
-        AND s.student_id = ?
+        AND s.student_id = st.id
 
     ORDER BY a.due_date ASC, a.id DESC
 ";
+
 
 
 $stmt = $conn->prepare($sql);
@@ -101,7 +107,6 @@ $assignments = [];
 while ($row = $result->fetch_assoc()) {
 
     $assignments[] = $row;
-
 }
 
 

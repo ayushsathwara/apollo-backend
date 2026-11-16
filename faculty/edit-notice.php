@@ -1,9 +1,13 @@
+
 <?php
 session_name('APOLLO_FACULTY_SESSION');
 session_start();
+
 header("Content-Type: application/json");
+
 require_once __DIR__ . "/../db.php";
 
+// Check faculty login
 if (!isset($_SESSION["faculty_id"])) {
     http_response_code(401);
     echo json_encode([
@@ -13,6 +17,7 @@ if (!isset($_SESSION["faculty_id"])) {
     exit;
 }
 
+// POST only
 if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     http_response_code(405);
     echo json_encode([
@@ -22,6 +27,7 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
     exit;
 }
 
+// Read JSON
 $input = json_decode(file_get_contents("php://input"), true);
 
 $id = filter_var($input["id"] ?? null, FILTER_VALIDATE_INT);
@@ -30,6 +36,7 @@ $message = trim($input["message"] ?? "");
 $target_role = $input["target_role"] ?? "";
 $category = $input["category"] ?? "";
 
+// Validate required fields
 if (!$id || $title === "" || $message === "") {
     http_response_code(400);
     echo json_encode([
@@ -39,6 +46,7 @@ if (!$id || $title === "" || $message === "") {
     exit;
 }
 
+// Validate audience and category
 $allowed_roles = ["all", "student", "parent", "faculty"];
 $allowed_categories = ["academic", "exam", "event"];
 
@@ -56,14 +64,24 @@ if (
 
 $faculty_id = (int) $_SESSION["faculty_id"];
 
-// Verify that this faculty member published the notice.
+// Get existing notice details
 $stmt = $conn->prepare(
-    "SELECT posted_by FROM notices WHERE id = ?"
+    "SELECT posted_by, course FROM notices WHERE id = ?"
 );
+
+if (!$stmt) {
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Unable to verify notice."
+    ]);
+    exit;
+}
 
 $stmt->bind_param("i", $id);
 $stmt->execute();
-$stmt->bind_result($posted_by);
+$stmt->bind_result($posted_by, $existing_course);
+
 $notice_found = $stmt->fetch();
 $stmt->close();
 
@@ -76,7 +94,7 @@ if (!$notice_found) {
     exit;
 }
 
-// Match the logged-in faculty's name to the notice publisher.
+// Get logged-in faculty details
 $stmt = $conn->prepare(
     "SELECT name FROM faculty WHERE id = ?"
 );
@@ -84,9 +102,11 @@ $stmt = $conn->prepare(
 $stmt->bind_param("i", $faculty_id);
 $stmt->execute();
 $stmt->bind_result($faculty_name);
+
 $faculty_found = $stmt->fetch();
 $stmt->close();
 
+// Verify notice ownership
 if (!$faculty_found || $posted_by !== $faculty_name) {
     http_response_code(403);
     echo json_encode([
@@ -96,18 +116,57 @@ if (!$faculty_found || $posted_by !== $faculty_name) {
     exit;
 }
 
+// Handle course
+$allowed_courses = ["all", "BCA", "MCA", "BBA"];
+
+if (array_key_exists("course", $input)) {
+
+    $course = $input["course"];
+
+    if (!in_array($course, $allowed_courses, true)) {
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "message" => "Invalid course selected."
+        ]);
+        exit;
+    }
+
+    // All courses means NULL
+    $course = ($course === "all") ? null : $course;
+} else {
+
+    // Preserve existing course if frontend does not send it
+    $course = $existing_course;
+}
+
+// Update notice
 $stmt = $conn->prepare(
     "UPDATE notices
-     SET title = ?, message = ?, target_role = ?, category = ?
+     SET title = ?,
+         message = ?,
+         target_role = ?,
+         category = ?,
+         course = ?
      WHERE id = ?"
 );
 
+if (!$stmt) {
+    http_response_code(500);
+    echo json_encode([
+        "success" => false,
+        "message" => "Unable to prepare notice update."
+    ]);
+    exit;
+}
+
 $stmt->bind_param(
-    "ssssi",
+    "sssssi",
     $title,
     $message,
     $target_role,
     $category,
+    $course,
     $id
 );
 
